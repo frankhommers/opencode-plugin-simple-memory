@@ -1,7 +1,7 @@
 {
   "name": "@knikolov/opencode-plugin-simple-memory",
   "module": "index.ts",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "knikolov",
   "repository": "https://github.com/cnicolov/opencode-plugin-simple-memory",
   "files": [
