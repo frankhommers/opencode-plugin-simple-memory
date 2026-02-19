@@ -90,6 +90,9 @@ const remember = tool({
 })
 
 const getAllMemories = async (): Promise<Memory[]> => {
+  const dir = Bun.file(MEMORY_DIR)
+  if (!(await dir.exists())) return []
+
   const glob = new Bun.Glob("*.logfmt")
   const files = await Array.fromAsync(glob.scan(MEMORY_DIR))
 
@@ -184,6 +187,9 @@ const update = tool({
     tags: tool.schema.array(tool.schema.string()).optional().describe("Update tags"),
   },
   async execute(args) {
+    const dir = Bun.file(MEMORY_DIR)
+    if (!(await dir.exists())) return "No memory files found"
+
     const glob = new Bun.Glob("*.logfmt")
     const files = await Array.fromAsync(glob.scan(MEMORY_DIR))
 
@@ -305,6 +311,9 @@ const forget = tool({
     reason: tool.schema.string().describe("Why this is being deleted (for audit purposes)"),
   },
   async execute(args) {
+    const dir = Bun.file(MEMORY_DIR)
+    if (!(await dir.exists())) return "No memory files found"
+
     const glob = new Bun.Glob("*.logfmt")
     const files = await Array.fromAsync(glob.scan(MEMORY_DIR))
 
