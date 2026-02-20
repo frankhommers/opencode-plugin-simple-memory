@@ -18,7 +18,37 @@ A persistent memory plugin for [OpenCode](https://opencode.ai) that enables the 
 
 2. Start using memory commands in your conversations.
 
-Memories are stored in `.opencode/memory/` as daily logfmt files.
+Memories are stored in `.opencode/memory/` as daily logfmt files by default.
+
+## Configuration (global default + project override)
+
+The plugin now supports its own config files:
+
+- Global defaults: `~/.config/opencode/memory-log.json`
+- Per-project override: `.opencode/memory-log.json`
+
+Project config overrides global config.
+
+Example:
+
+```json
+{
+  "memoryDir": "${home}/.local/share/opencode/memory",
+  "logger": {
+    "enabled": false,
+    "scopes": ["user", "project"],
+    "dir": "${project}/.opencode/logs/memory"
+  }
+}
+```
+
+Supported placeholders:
+
+- `${home}`
+- `${project}` (workspace/project root)
+- `${workspace}` (alias of `${project}`)
+- `${date}`
+- `${env:VAR_NAME}`
 
 ## Updating
 
@@ -37,7 +67,7 @@ opencode
 
 ## Tools
 
-The plugin provides five tools:
+The plugin provides memory tools and optional logger tools:
 
 | Tool | Description |
 |------|-------------|
@@ -46,6 +76,14 @@ The plugin provides five tools:
 | `memory_update` | Update an existing memory |
 | `memory_forget` | Delete a memory (with audit logging) |
 | `memory_list` | List all scopes and types for discovery |
+| `memory_logger_set` | Enable/disable JSONL logger and set scope filters |
+| `memory_logger_status` | Show active memory/logger config |
+
+## Remember vs Logger
+
+- `memory_*` tools are curated memory (facts/preferences/decisions).
+- `memory_logger_*` is separate JSONL event logging.
+- Logger output is append-only and intentionally separate from memory files.
 
 ## Memory Types
 
