@@ -246,23 +246,6 @@ const makeMemoryTools = (runtime: {
     await Bun.write(file, existing + line)
   }
 
-  const shouldLogScope = (scope: string): boolean => {
-    const logger = runtime.settings.logger
-    if (!logger.enabled) return false
-    if (!logger.scopes.length) return true
-    return logger.scopes.includes("*") || logger.scopes.includes(scope)
-  }
-
-  const appendJsonLog = async (scope: string, payload: Record<string, unknown>) => {
-    if (!shouldLogScope(scope)) return
-    await ensureDir(runtime.settings.logger.dir)
-
-    const date = new Date().toISOString().split("T")[0]
-    const file = Bun.file(`${runtime.settings.logger.dir}/${date}.jsonl`)
-    const existing = (await file.exists()) ? await file.text() : ""
-    await Bun.write(file, `${existing}${JSON.stringify(payload)}\n`)
-  }
-
   const appendSessionLog = async (sessionID: string, payload: Record<string, unknown>) => {
     if (!runtime.settings.logger.enabled) return
 
@@ -300,7 +283,7 @@ const makeMemoryTools = (runtime: {
       issue: tool.schema.string().optional().describe("Related GitHub issue (e.g., #51)"),
       tags: tool.schema.array(tool.schema.string()).optional().describe("Additional tags"),
     },
-    async execute(args) {
+    async execute(args, context) {
       await ensureDir(runtime.settings.memoryDir)
 
       const ts = new Date().toISOString()
@@ -313,7 +296,7 @@ const makeMemoryTools = (runtime: {
       const existing = (await file.exists()) ? await file.text() : ""
       await Bun.write(file, existing + line)
 
-      await appendJsonLog(args.scope, {
+      await appendSessionLog(context.sessionID, {
         ts,
         event: "memory_remember",
         scope: args.scope,
@@ -387,7 +370,7 @@ const makeMemoryTools = (runtime: {
       issue: tool.schema.string().optional().describe("Update related GitHub issue (e.g., #51)"),
       tags: tool.schema.array(tool.schema.string()).optional().describe("Update tags"),
     },
-    async execute(args) {
+    async execute(args, context) {
       const dir = Bun.file(runtime.settings.memoryDir)
       if (!(await dir.exists())) return "No memory files found"
 
@@ -457,7 +440,7 @@ const makeMemoryTools = (runtime: {
       lines[target.lineIndex] = newLine
       await Bun.write(target.filepath, lines.join("\n"))
 
-      await appendJsonLog(args.scope, {
+      await appendSessionLog(context.sessionID, {
         ts,
         event: "memory_update",
         scope: args.scope,
@@ -515,7 +498,7 @@ const makeMemoryTools = (runtime: {
         .describe("Type of memory"),
       reason: tool.schema.string().describe("Why this is being deleted (for audit purposes)"),
     },
-    async execute(args) {
+    async execute(args, context) {
       const dir = Bun.file(runtime.settings.memoryDir)
       if (!(await dir.exists())) return "No memory files found"
 
@@ -552,8 +535,9 @@ const makeMemoryTools = (runtime: {
         await logDeletion(memory, args.reason)
       }
 
-      await appendJsonLog(args.scope, {
-        ts: new Date().toISOString(),
+      const ts = new Date().toISOString()
+      await appendSessionLog(context.sessionID, {
+        ts,
         event: "memory_forget",
         scope: args.scope,
         memory_type: args.type,
@@ -614,7 +598,6 @@ const makeMemoryTools = (runtime: {
     memory_list: listMemories,
     memory_logger_set: setLogger,
     memory_logger_status: loggerStatus,
-    appendJsonLog,
     appendSessionLog,
   }
 }
@@ -679,14 +662,9 @@ export const MemoryPlugin: Plugin = async (ctx) => {
           parts: output.parts,
         },
       })
-      await tools.appendJsonLog(
-        "chat",
-        event,
-      )
       await tools.appendSessionLog(input.sessionID, event)
     },
     "tool.execute.before": async (input, output) => {
-      const scope = typeof output.args?.scope === "string" ? output.args.scope : "tool"
       const info = await getSessionInfo(input.sessionID)
       const event = buildLoggerEvent("tool_execute_before", {
         sessionID: input.sessionID,
@@ -698,14 +676,9 @@ export const MemoryPlugin: Plugin = async (ctx) => {
           args: output.args,
         },
       })
-      await tools.appendJsonLog(
-        scope,
-        event,
-      )
       await tools.appendSessionLog(input.sessionID, event)
     },
     "tool.execute.after": async (input, output) => {
-      const scope = typeof output.metadata?.scope === "string" ? output.metadata.scope : "tool"
       const info = await getSessionInfo(input.sessionID)
       const event = buildLoggerEvent("tool_execute_after", {
         sessionID: input.sessionID,
@@ -718,10 +691,6 @@ export const MemoryPlugin: Plugin = async (ctx) => {
           output: output.output,
         },
       })
-      await tools.appendJsonLog(
-        scope,
-        event,
-      )
       await tools.appendSessionLog(input.sessionID, event)
     },
     tool: {
