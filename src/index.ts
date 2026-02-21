@@ -1,6 +1,7 @@
 import { homedir } from "node:os"
 import { dirname, isAbsolute, join } from "node:path"
 import { type Plugin, tool } from "@opencode-ai/plugin"
+import type { OpencodeClient } from "@opencode-ai/sdk"
 
 interface Memory {
   ts: string
@@ -29,6 +30,13 @@ interface SettingsFile {
     scopes?: string[]
     dir?: string
   }
+}
+
+interface SessionInfo {
+  id: string
+  title: string
+  parentID?: string
+  slug: string
 }
 
 const DEFAULT_SETTINGS: PluginSettings = {
@@ -187,9 +195,14 @@ const ensureDir = async (path: string) => {
   }
 }
 
+const slugify = (text: string): string =>
+  text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60)
+
 const makeMemoryTools = (runtime: {
   settings: PluginSettings
   sessionAgents: Map<string, string>
+  sessionInfo: Map<string, SessionInfo>
+  client: OpencodeClient
   projectDir: string
 }) => {
   const getMemoryFile = () => {
@@ -583,6 +596,37 @@ export const MemoryPlugin: Plugin = async (ctx) => {
     projectDir: ctx.directory,
     settings: await loadSettings(ctx.directory),
     sessionAgents: new Map<string, string>(),
+    sessionInfo: new Map<string, SessionInfo>(),
+    client: ctx.client,
+  }
+
+  const getSessionInfo = async (sessionID: string): Promise<SessionInfo> => {
+    const cached = runtime.sessionInfo.get(sessionID)
+    if (cached) return cached
+
+    try {
+      const result = await runtime.client.session.get({ path: { id: sessionID } })
+      const session = result.data
+      if (!session) throw new Error("Session not found")
+      const date = new Date(session.time.created * 1000).toISOString().split("T")[0]
+      const info: SessionInfo = {
+        id: session.id,
+        title: session.title,
+        parentID: session.parentID,
+        slug: `${date}-${slugify(session.title)}`,
+      }
+      runtime.sessionInfo.set(sessionID, info)
+      return info
+    } catch {
+      const info: SessionInfo = {
+        id: sessionID,
+        title: sessionID,
+        parentID: undefined,
+        slug: sessionID,
+      }
+      runtime.sessionInfo.set(sessionID, info)
+      return info
+    }
   }
 
   const tools = makeMemoryTools(runtime)
