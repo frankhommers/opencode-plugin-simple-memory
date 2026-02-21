@@ -202,6 +202,7 @@ const makeMemoryTools = (runtime: {
   settings: PluginSettings
   sessionAgents: Map<string, string>
   sessionInfo: Map<string, SessionInfo>
+  getSessionInfo: (sessionID: string) => Promise<SessionInfo>
   client: OpencodeClient
   projectDir: string
 }) => {
@@ -258,6 +259,32 @@ const makeMemoryTools = (runtime: {
 
     const date = new Date().toISOString().split("T")[0]
     const file = Bun.file(`${runtime.settings.logger.dir}/${date}.jsonl`)
+    const existing = (await file.exists()) ? await file.text() : ""
+    await Bun.write(file, `${existing}${JSON.stringify(payload)}\n`)
+  }
+
+  const appendSessionLog = async (sessionID: string, payload: Record<string, unknown>) => {
+    if (!runtime.settings.logger.enabled) return
+
+    const info = await runtime.getSessionInfo(sessionID)
+
+    let sessionSlug: string
+    let filename: string
+
+    if (info.parentID) {
+      const parentInfo = await runtime.getSessionInfo(info.parentID)
+      sessionSlug = parentInfo.slug
+      const agent = runtime.sessionAgents.get(sessionID) || "subagent"
+      filename = `${agent}-${info.id}.jsonl`
+    } else {
+      sessionSlug = info.slug
+      filename = "main.jsonl"
+    }
+
+    const sessionsDir = `${runtime.settings.memoryDir}/sessions/${sessionSlug}`
+    await ensureDir(sessionsDir)
+
+    const file = Bun.file(`${sessionsDir}/${filename}`)
     const existing = (await file.exists()) ? await file.text() : ""
     await Bun.write(file, `${existing}${JSON.stringify(payload)}\n`)
   }
@@ -588,6 +615,7 @@ const makeMemoryTools = (runtime: {
     memory_logger_set: setLogger,
     memory_logger_status: loggerStatus,
     appendJsonLog,
+    appendSessionLog,
   }
 }
 
@@ -629,7 +657,10 @@ export const MemoryPlugin: Plugin = async (ctx) => {
     }
   }
 
-  const tools = makeMemoryTools(runtime)
+  const tools = makeMemoryTools({
+    ...runtime,
+    getSessionInfo,
+  })
 
   return {
     config: async (input) => {
@@ -637,52 +668,58 @@ export const MemoryPlugin: Plugin = async (ctx) => {
     },
     "chat.message": async (input, output) => {
       if (input.agent) runtime.sessionAgents.set(input.sessionID, input.agent)
+      const event = buildLoggerEvent("chat_message", {
+        sessionID: input.sessionID,
+        parentSessionID: null,
+        agent: input.agent,
+        payload: {
+          message_id: input.messageID,
+          model: input.model,
+          parts: output.parts,
+        },
+      })
       await tools.appendJsonLog(
         "chat",
-        buildLoggerEvent("chat_message", {
-          sessionID: input.sessionID,
-          parentSessionID: null,
-          agent: input.agent,
-          payload: {
-            message_id: input.messageID,
-            model: input.model,
-            parts: output.parts,
-          },
-        }),
+        event,
       )
+      await tools.appendSessionLog(input.sessionID, event)
     },
     "tool.execute.before": async (input, output) => {
       const scope = typeof output.args?.scope === "string" ? output.args.scope : "tool"
+      const event = buildLoggerEvent("tool_execute_before", {
+        sessionID: input.sessionID,
+        parentSessionID: null,
+        agent: runtime.sessionAgents.get(input.sessionID),
+        payload: {
+          call_id: input.callID,
+          tool: input.tool,
+          args: output.args,
+        },
+      })
       await tools.appendJsonLog(
         scope,
-        buildLoggerEvent("tool_execute_before", {
-          sessionID: input.sessionID,
-          parentSessionID: null,
-          agent: runtime.sessionAgents.get(input.sessionID),
-          payload: {
-            call_id: input.callID,
-            tool: input.tool,
-            args: output.args,
-          },
-        }),
+        event,
       )
+      await tools.appendSessionLog(input.sessionID, event)
     },
     "tool.execute.after": async (input, output) => {
       const scope = typeof output.metadata?.scope === "string" ? output.metadata.scope : "tool"
+      const event = buildLoggerEvent("tool_execute_after", {
+        sessionID: input.sessionID,
+        parentSessionID: null,
+        agent: runtime.sessionAgents.get(input.sessionID),
+        payload: {
+          call_id: input.callID,
+          tool: input.tool,
+          title: output.title,
+          output: output.output,
+        },
+      })
       await tools.appendJsonLog(
         scope,
-        buildLoggerEvent("tool_execute_after", {
-          sessionID: input.sessionID,
-          parentSessionID: null,
-          agent: runtime.sessionAgents.get(input.sessionID),
-          payload: {
-            call_id: input.callID,
-            tool: input.tool,
-            title: output.title,
-            output: output.output,
-          },
-        }),
+        event,
       )
+      await tools.appendSessionLog(input.sessionID, event)
     },
     tool: {
       memory_remember: tools.memory_remember,
