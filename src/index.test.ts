@@ -136,4 +136,139 @@ describe("session-aware logger", () => {
     const text = await file.text()
     expect(text).toContain('"session_id":"ses_sub"')
   })
+
+  test("chat.message resolves parent_session_id from session API", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "memory-plugin-"))
+    await writeProjectSettings(projectDir)
+    const plugin = await MemoryPlugin({
+      directory: projectDir,
+      client: {
+        session: {
+          get: async ({ path }: { path: { id: string } }) => ({
+            data:
+              path.id === "ses_sub"
+                ? {
+                    id: "ses_sub",
+                    title: "Explore auth",
+                    parentID: "ses_main",
+                    time: { created: Date.parse("2026-02-21T00:00:00Z") / 1000 },
+                  }
+                : {
+                    id: "ses_main",
+                    title: "Fix Auth Bug",
+                    parentID: undefined,
+                    time: { created: Date.parse("2026-02-21T00:00:00Z") / 1000 },
+                  },
+          }),
+        },
+      },
+    } as never)
+
+    await (plugin as any)["chat.message"](
+      {
+        sessionID: "ses_sub",
+        agent: "explore",
+        messageID: "msg_sub",
+        model: { providerID: "openai", modelID: "gpt-5" },
+      },
+      {
+        parts: [],
+      },
+    )
+
+    const file = Bun.file(`${projectDir}/.opencode/memory/sessions/2026-02-21-fix-auth-bug/explore-ses_sub.jsonl`)
+    const text = await file.text()
+    const event = JSON.parse(text.trim()) as { parent_session_id: string | null }
+    expect(event.parent_session_id).toBe("ses_main")
+  })
+
+  test("tool.execute.before resolves parent_session_id from session API", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "memory-plugin-"))
+    await writeProjectSettings(projectDir)
+    const plugin = await MemoryPlugin({
+      directory: projectDir,
+      client: {
+        session: {
+          get: async ({ path }: { path: { id: string } }) => ({
+            data:
+              path.id === "ses_sub"
+                ? {
+                    id: "ses_sub",
+                    title: "Explore auth",
+                    parentID: "ses_main",
+                    time: { created: Date.parse("2026-02-21T00:00:00Z") / 1000 },
+                  }
+                : {
+                    id: "ses_main",
+                    title: "Fix Auth Bug",
+                    parentID: undefined,
+                    time: { created: Date.parse("2026-02-21T00:00:00Z") / 1000 },
+                  },
+          }),
+        },
+      },
+    } as never)
+
+    await (plugin as any)["tool.execute.before"](
+      {
+        sessionID: "ses_sub",
+        callID: "call_1",
+        tool: "memory_remember",
+      },
+      {
+        args: { scope: "auth", content: "x", type: "decision" },
+      },
+    )
+
+    const file = Bun.file(`${projectDir}/.opencode/memory/sessions/2026-02-21-fix-auth-bug/subagent-ses_sub.jsonl`)
+    const text = await file.text()
+    const event = JSON.parse(text.trim()) as { parent_session_id: string | null }
+    expect(event.parent_session_id).toBe("ses_main")
+  })
+
+  test("tool.execute.after resolves parent_session_id from session API", async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), "memory-plugin-"))
+    await writeProjectSettings(projectDir)
+    const plugin = await MemoryPlugin({
+      directory: projectDir,
+      client: {
+        session: {
+          get: async ({ path }: { path: { id: string } }) => ({
+            data:
+              path.id === "ses_sub"
+                ? {
+                    id: "ses_sub",
+                    title: "Explore auth",
+                    parentID: "ses_main",
+                    time: { created: Date.parse("2026-02-21T00:00:00Z") / 1000 },
+                  }
+                : {
+                    id: "ses_main",
+                    title: "Fix Auth Bug",
+                    parentID: undefined,
+                    time: { created: Date.parse("2026-02-21T00:00:00Z") / 1000 },
+                  },
+          }),
+        },
+      },
+    } as never)
+
+    await (plugin as any)["tool.execute.after"](
+      {
+        sessionID: "ses_sub",
+        callID: "call_2",
+        tool: "memory_recall",
+      },
+      {
+        metadata: { scope: "auth" },
+        title: "done",
+        output: "ok",
+      },
+    )
+
+    const file = Bun.file(`${projectDir}/.opencode/memory/sessions/2026-02-21-fix-auth-bug/subagent-ses_sub.jsonl`)
+    const text = await file.text()
+    const event = JSON.parse(text.trim()) as { parent_session_id: string | null }
+    expect(event.parent_session_id).toBe("ses_main")
+  })
 })

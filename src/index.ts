@@ -668,9 +668,10 @@ export const MemoryPlugin: Plugin = async (ctx) => {
     },
     "chat.message": async (input, output) => {
       if (input.agent) runtime.sessionAgents.set(input.sessionID, input.agent)
+      const info = await getSessionInfo(input.sessionID)
       const event = buildLoggerEvent("chat_message", {
         sessionID: input.sessionID,
-        parentSessionID: null,
+        parentSessionID: info.parentID || null,
         agent: input.agent,
         payload: {
           message_id: input.messageID,
@@ -686,9 +687,10 @@ export const MemoryPlugin: Plugin = async (ctx) => {
     },
     "tool.execute.before": async (input, output) => {
       const scope = typeof output.args?.scope === "string" ? output.args.scope : "tool"
+      const info = await getSessionInfo(input.sessionID)
       const event = buildLoggerEvent("tool_execute_before", {
         sessionID: input.sessionID,
-        parentSessionID: null,
+        parentSessionID: info.parentID || null,
         agent: runtime.sessionAgents.get(input.sessionID),
         payload: {
           call_id: input.callID,
@@ -704,9 +706,10 @@ export const MemoryPlugin: Plugin = async (ctx) => {
     },
     "tool.execute.after": async (input, output) => {
       const scope = typeof output.metadata?.scope === "string" ? output.metadata.scope : "tool"
+      const info = await getSessionInfo(input.sessionID)
       const event = buildLoggerEvent("tool_execute_after", {
         sessionID: input.sessionID,
-        parentSessionID: null,
+        parentSessionID: info.parentID || null,
         agent: runtime.sessionAgents.get(input.sessionID),
         payload: {
           call_id: input.callID,
